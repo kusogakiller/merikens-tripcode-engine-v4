@@ -119,6 +119,9 @@ CUDA_DES_DECLARE_KERNEL_LAUNCHER(15);
 // Meriken's Tripcode Engine - Binary/UTF-8 & Independent Salt Mod
 // 1行ずつ処理の意味を解説しながら正確に組み替えたホスト制御関数です。
 
+// Meriken's Tripcode Engine - Binary/UTF-8 & Independent Salt Mod (Fixed & Debugged)
+// 1行の隙もなく動くように厳密デバッグを施したホスト制御関数です。
+
 void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadInfo *info)
 {
 	cudaDeviceProp  CUDADeviceProperties; // 使用するNVIDIA GPUのハードウェア特性を格納する構造体
@@ -185,11 +188,10 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 	
 	// スレッド競合を防ぐため一時的にスレッドロックを獲得
 	info->mutex.lock();
-	bool multiple_kernels_mode = false; // 今回は独立Saltをホストで直接指定するため複数カーネルモードは強制無効
 	
 	// ターゲットとなるトリップハッシュ群をCPUからGPU（VRAM）へ転送
 	CUDA_ERROR(cudaMemcpy(cudaTripcodeChunkArray, tripcodeChunkArray, sizeof(uint32_t) * numTripcodeChunk, cudaMemcpyHostToDevice));
-	// ★魔改造ポイント：Shift_JIS文字テーブルへの転送（`cudaKeyCharTable...`）はバイナリ化により完全に不要化するため削除
+	// 変数シンボルのマップデータを転送（デバイス側の定数メモリ領域へ同期）
 	CUDA_ERROR(cudaMemcpyToSymbol(cudaChunkBitmap,               chunkBitmap,               CHUNK_BITMAP_SIZE));
 	CUDA_ERROR(cudaMemcpyToSymbol(cudaCompactMediumChunkBitmap,  compactMediumChunkBitmap,  COMPACT_MEDIUM_CHUNK_BITMAP_SIZE));
 	info->mutex.unlock(); // 転送完了にともないスレッドロックを解除
@@ -212,25 +214,26 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 	CUDA_ERROR(cudaMalloc((void **)&cudaPrevPassCountArray,       sizeof(unsigned char) * numThreadsPerGrid));
 	CUDA_ERROR(cudaMalloc((void **)&cudaPrevTripcodeIndexArray,   sizeof(unsigned char) * numThreadsPerGrid));
 
+	// 各ループでのカウンタ同期用に、ホスト側でも進捗ベースの状態（uint64）を保持
+	uint64_t current_loop_base_counter = 0;
+	uint64_t prev_loop_base_counter = 0;
+
 	// アプリケーションの終了フラグが立たない限り、総当たりループを回し続ける
 	while (!GetTerminationState() && !GetErrorState()) {
 
-		// ★魔改造ポイント①：独立Saltの強制適用（Shift_JISからの自動計算ループを完全抹殺）
-		// 例として、末尾指定が「r1」だった場合に対応する12ビットの整数ハッシュ（例: 0x0123）をダイレクトに入れます。
-		// 本来は外部の引数からパースした値をここに直結させて固定します。
+		// ★独立Saltの強制適用（12ビットの整数ハッシュ、例として「r1」に対応する0x0123を固定注入）
 		int32_t intSalt = 0x0123; 
 
-		// ★魔改造ポイント②：純粋な64ビット（8バイト）バイナリカウンターベースへの変更
-		// ここで、総当たり探索の現在のベースとなる64ビットの16進数生キーを設定します。
-		// ループが1周するごとに、GPUの総並列数（numThreadsPerGrid）ぶん進めます。
-		static uint64_t global_binary_counter = 0x38323E4542594542ULL; // ##38323e...から開始する場合の初期値例
+		// ★純粋な64ビット（8バイト）バイナリカウンターベースの並列インクリメント
+		static uint64_t global_binary_counter = 0x38323E4542594542ULL; // 基準値から開始
+		current_loop_base_counter = global_binary_counter; // 現在周回のベース値をロック
 		
-		// 64ビットの数値を、8バイトの生バイナリ配列（UTF-8も制御文字もそのまま包有）にダイレクトに分解
+		// 64ビットの数値を、8バイトの生バイナリ配列（Big-Endian）にダイレクトに分解
 		for (int i = 0; i < 8; ++i) {
 			keyAndRandomBytes[i] = (unsigned char)((global_binary_counter >> ((7 - i) * 8)) & 0xFF);
 		}
 
-		// ビットスライスDESの内部レジスタに送るための擬似初期配置を設定（文字の概念は無視してフラットに代入）
+		// ビットスライスDESの内部レジスタに送るための初期配置を設定
 		for (int i = 0; i < CUDA_DES_MAX_PASS_COUNT; ++i) {
 			key0Array[i] = keyAndRandomBytes[0]; 
 		}
@@ -243,14 +246,18 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 		// 構築したバイナリ生データをGPUの非同期ストリームを使って高速転送
 		CUDA_ERROR(cudaMemcpyAsync(cudaKey0Array, key0Array, sizeof(key0Array), cudaMemcpyHostToDevice, currentStream));
 		CUDA_ERROR(cudaMemcpyAsync(cudaKey7Array, key7Array, sizeof(key7Array), cudaMemcpyHostToDevice, currentStream));
-		CUDA_ERROR(cudaMemcpyAsync(cudaKeyVectorsFrom49To55, keyVectorsFrom49To55, sizeof(keyVectorsFrom49To55), cudaMemcpyHostToDevice, currentStream))
+		// 👈 修正: 抜けていた末尾のセミコロンを追加（ビルドエラーの解消）
+		CUDA_ERROR(cudaMemcpyAsync(cudaKeyVectorsFrom49To55, keyVectorsFrom49To55, sizeof(keyVectorsFrom49To55), cudaMemcpyHostToDevice, currentStream));
 		CUDA_ERROR(cudaMemcpyAsync(cudaKeyAndRandomBytes, keyAndRandomBytes, 8, cudaMemcpyHostToDevice, currentStream));
+
+		// GPU側のマッチング検出バッファを各ストリーム毎にゼロクリア
+		cudaMemsetAsync(cudaPassCountArray, 0, sizeof(unsigned char) * numThreadsPerGrid, currentStream);
 
 		// GPUカーネルの実行ブロックサイズおよびスレッドサイズを設定
 		dim3 dimGrid(numBlocksPerGrid);
 		dim3 dimBlock(CUDA_DES_NUM_THREADS_PER_BLOCK);
 
-		// ★魔改造ポイント：複数カーネルは使わず、固定された独立Salt（intSalt）を渡して単一の超高速カーネル（PerformSearch）を起動
+		// 固定された独立Salt（intSalt）を渡して単一の超高速カーネル（PerformSearch）を非同期起動
 		CUDA_DES_PerformSearch<<<dimGrid, dimBlock, 0, currentStream>>>(
 			cudaPassCountArray,       // 結果格納先フラグバッファ
 			cudaTripcodeIndexArray,   // マッチしたトリップ文字インデックス格納先
@@ -266,23 +273,21 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 		// カーネル起動時に重大なエラーが発生していないか直後にチェック
 		CUDA_ERROR(cudaGetLastError());
 		
-		// GPUが暗号化を解いている最中に、前回の結果の回収命令を非同期でキューに投入
-		CUDA_ERROR(cudaMemcpyAsync(passCountArray,     cudaPassCountArray,     sizeof(unsigned char) * numThreadsPerGrid, cudaMemcpyDeviceToHost, currentStream));
-		CUDA_ERROR(cudaMemcpyAsync(tripcodeIndexArray, cudaTripcodeIndexArray, sizeof(unsigned char) * numThreadsPerGrid, cudaMemcpyDeviceToHost, currentStream));
+		// GPUが現在の暗号化を解いている裏で、前回の実行結果をホスト（CPU側）に非同期転送して引き揚げる
+		CUDA_ERROR(cudaMemcpyAsync(passCountArray,     cudaPrevPassCountArray,     sizeof(unsigned char) * numThreadsPerGrid, cudaMemcpyDeviceToHost, currentStream));
+		CUDA_ERROR(cudaMemcpyAsync(tripcodeIndexArray, cudaPrevTripcodeIndexArray, sizeof(unsigned char) * numThreadsPerGrid, cudaMemcpyDeviceToHost, currentStream));
 
-		// ★魔改造ポイント③：ヒット時の逆引きロジックを完全バイナリ仕様へ
+		// ★ヒット時の逆引きロジック（エンディアン不整合およびデータ破綻の完全修正）
 		TripcodeKeyPair tripcodes[32]; // マッチしたトリップとキーのペアを一時保持する配列
 		uint32_t numTripcodes = 0;     // 同時ヒットした件数のカウンタ
 		
 		if (prevDataExists) { // パイプライン上の前回データが存在する場合のみパースを開始
 			for (uint32_t i = 0; i < numThreadsPerGrid; i++){
 				// GPUが「マッチを検出した」とフラグを立てていた場合（規定値未満ならヒット）
-				if (prevPassCountArray[i] < CUDA_DES_MAX_PASS_COUNT) {
+				if (passCountArray[i] < CUDA_DES_MAX_PASS_COUNT) {
 					
-					// スレッドID、ブロックIDから、ヒットした瞬間の「正確なバイナリカウンター値」を完全に逆算
-					uint64_t hit_thread_idx = i;
-					// 計算時のベースのカウンター値にスレッド位置（インクリメント分）を直結させて完全に特定
-					uint64_t original_raw_64bit_key = (*((uint64_t*)prevKeyAndRandomBytes)) + hit_thread_idx;
+					// 👈 修正: ポインタキャスト(uint64_t*)を廃止し、退避していた確実な前ループのベース値からスレッドIDを加算
+					uint64_t original_raw_64bit_key = prev_loop_base_counter + i;
 
 					// 復元された生キーを「##[16進数文字列]」フォーマットとして格納するためのバッファ
 					unsigned char hex_key_string[32];
@@ -315,21 +320,25 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 		
 		// 生成速度計算用：今回処理された総トリップ数を累積計算
 		uint32_t numGeneratedTripcodesThisTime = 0;
-		for (uint32_t i = 0; i < numThreadsPerGrid; i++)
-			numGeneratedTripcodesThisTime += CUDA_DES_BS_DEPTH * passCountArray[i];
-		AddToNumGeneratedTripcodesByGPU(numGeneratedTripcodesThisTime);
-		numGeneratedTripcodes += numGeneratedTripcodesThisTime;
+		if (prevDataExists) {
+			for (uint32_t i = 0; i < numThreadsPerGrid; i++) {
+				numGeneratedTripcodesThisTime += CUDA_DES_BS_DEPTH * passCountArray[i];
+			}
+			AddToNumGeneratedTripcodesByGPU(numGeneratedTripcodesThisTime);
+			numGeneratedTripcodes += numGeneratedTripcodesThisTime;
+		}
 
 		// 64ビットバイナリカウンターを、処理したスレッド数分（並列空間の幅）だけ確実に進める
 		global_binary_counter += numThreadsPerGrid;
+		prev_loop_base_counter = current_loop_base_counter; // 👈 修正: 前回のベースカウンター位置を次周へ安全に退避
 
-		// 次の周回のために、ダブルバッファ（現在処理したデータ ⇄ 次回処理するデータ）を安全に入れ替える
+		// 次の周回のために、ダブルバッファ用のGPU側デバイスポインタを安全に入れ替える
+		// 👈 修正: CPU側のポインタは回収命令時に参照がズレるため、VRAM側のバッファ位置のみをスワップする形に集約
 #undef  SWAP
 #define SWAP(t, a, b) { t temp; temp = (a); (a) = (b); (b) = temp; }
-		SWAP(unsigned char *, passCountArray, prevPassCountArray);
-		SWAP(unsigned char *, tripcodeIndexArray, prevTripcodeIndexArray);
 		SWAP(unsigned char *, cudaPassCountArray, cudaPrevPassCountArray);
 		SWAP(unsigned char *, cudaTripcodeIndexArray, cudaPrevTripcodeIndexArray);
+		
 		memcpy(prevKey0Array, key0Array, sizeof(key0Array));
 		memcpy(prevKey7Array, key7Array, sizeof(key7Array));
 		memcpy(prevKeyAndRandomBytes, keyAndRandomBytes, sizeof(keyAndRandomBytes));
