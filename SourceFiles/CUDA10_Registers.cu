@@ -222,10 +222,11 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 	while (!GetTerminationState() && !GetErrorState()) {
 
 		// ★独立Saltの強制適用（12ビットの整数ハッシュ、例として「r1」に対応する0x0123を固定注入）
-		int32_t intSalt = 0x0123; 
+		for (int32_t intSalt = 0; intSalt < 4096; ++intSalt) {
+		}
 
 		// ★純粋な64ビット（8バイト）バイナリカウンターベースの並列インクリメント
-		static uint64_t global_binary_counter = 0x38323E4542594542ULL; // 基準値から開始
+		static uint64_t global_binary_counter = 0x0000000000000000ULL; // 基準値から開始
 		current_loop_base_counter = global_binary_counter; // 現在周回のベース値をロック
 		
 		// 64ビットの数値を、8バイトの生バイナリ配列（Big-Endian）にダイレクトに分解
@@ -292,7 +293,7 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 					// 復元された生キーを「##[16進数文字列]」フォーマットとして格納するためのバッファ
 					unsigned char hex_key_string[32];
 					// 文字コード制限を完全に超越しているため、そのまま16進数の文字列（##...）としてパース出力
-					sprintf((char*)hex_key_string, "##%016llXr1", original_raw_64bit_key);
+					sprintf((char*)hex_key_string, "##%016llX", original_raw_64bit_key);
 					
 					// システム側の出力構造体に、復元した16進数生キーの文字列をそのままコピー
 					strcpy((char *)tripcodes[numTripcodes].key.c, (char *)hex_key_string);
@@ -330,6 +331,9 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 
 		// 64ビットバイナリカウンターを、処理したスレッド数分（並列空間の幅）だけ確実に進める
 		global_binary_counter += numThreadsPerGrid;
+		if (global_binary_counter == 0x0000000000000000ULL) {
+    		break;  // 1周期完了（2^64到達）
+		}
 		prev_loop_base_counter = current_loop_base_counter; // 👈 修正: 前回のベースカウンター位置を次周へ安全に退避
 
 		// 次の周回のために、ダブルバッファ用のGPU側デバイスポインタを安全に入れ替える
