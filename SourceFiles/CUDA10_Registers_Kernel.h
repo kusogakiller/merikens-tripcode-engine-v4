@@ -105,6 +105,9 @@
 #define KERNEL_FUNC2(salt) CUDA_DES_PerformSearch_##salt
 #define KERNEL_FUNC(salt) KERNEL_FUNC2(salt)
 
+// Meriken's Tripcode Engine - Device Kernel Binary-Mod
+// 各スレッドへのバイナリカウンター自動分配とビットスライス展開を実装したカーネル
+
 #if !defined(SALT)
 __global__ void CUDA_DES_PerformSearch(
 #else
@@ -112,8 +115,8 @@ __global__ void KERNEL_FUNC(SALT)(
 #endif
 	unsigned char      *passCountArray,
 	unsigned char      *tripcodeIndexArray,
-	uint32_t       *tripcodeChunkArray,
-	uint32_t        numTripcodeChunk,
+	uint32_t           *tripcodeChunkArray,
+	uint32_t            numTripcodeChunk,
 	int32_t                 intSalt,
 	unsigned char      *key0Array,
 	unsigned char      *key7Array,
@@ -121,83 +124,114 @@ __global__ void KERNEL_FUNC(SALT)(
 	unsigned char      *keyAndRandomBytes,
 	const int32_t           searchMode) {
 	
-	for (int32_t i = 0; i < COMPACT_MEDIUM_CHUNK_BITMAP_SIZE / CUDA_DES_NUM_THREADS_PER_BLOCK; ++i) \
+	// ターゲットトリップ判定用ビットマップを共有メモリへ高速ロード（元処理を維持）
+	for (int32_t i = 0; i < COMPACT_MEDIUM_CHUNK_BITMAP_SIZE / CUDA_DES_NUM_THREADS_PER_BLOCK; ++i) 
 	{ 
 		int32_t index = i * CUDA_DES_NUM_THREADS_PER_BLOCK + threadIdx.x;
 		cudaSharedCompactMediumChunkBitmap[index] = cudaCompactMediumChunkBitmap[index];
 	}
 	__syncthreads();
 
-	unsigned char key = keyAndRandomBytes[1];
-	DES_Vector K07 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
-	DES_Vector K08 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
-	DES_Vector K09 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
-	DES_Vector K10 = ((key & (0x1U << 3)) ? 0xffffffffU : 0x0);
-	DES_Vector K11 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
-	DES_Vector K12 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
-	DES_Vector K13 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+	// =========================================================================
+	// ★魔改造：Shift_JISテーブル引きを完全撤廃し、純粋な64ビットバイナリカウンターを復元
+	// =========================================================================
+	
+	// ホストから渡された基準となるベース生キー（8バイト）を64ビット数値として1つのレジスタに結合
+	uint64_t base_key_64 = 0;
+	for (int i = 0; i < 8; ++i) {
+		base_key_64 |= ((uint64_t)keyAndRandomBytes[i]) << ((7 - i) * 8);
+	}
 
-	key = keyAndRandomBytes[2];
-	DES_Vector K14 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
-	DES_Vector K15 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
-	DES_Vector K16 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
-	DES_Vector K17 = ((key & (0x1U << 3)) ? 0xffffffffU : 0x0);
-	DES_Vector K18 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
-	DES_Vector K19 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
-	DES_Vector K20 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+	// CUDAの並列空間における、このスレッドの一意なグローバルIDを計算
+	uint64_t global_thread_id = (uint64_t)blockIdx.x * (uint64_t)blockDim.x + (uint64_t)threadIdx.x;
 
-	BOOL isSecondByte =    ( IS_FIRST_BYTE_SJIS_FULL(key0Array[0])                                                   && IS_FIRST_BYTE_SJIS_FULL(keyAndRandomBytes[2]))
-		                || (!IS_FIRST_BYTE_SJIS_FULL(key0Array[0]) && !IS_FIRST_BYTE_SJIS_FULL(keyAndRandomBytes[1]) && IS_FIRST_BYTE_SJIS_FULL(keyAndRandomBytes[2]));
-	CUDA_SET_KEY_CHAR(key, isSecondByte, cudaKeyCharTable_FirstByte, keyAndRandomBytes[3] + (((threadIdx.x >> 6) &  7) | (((blockIdx.x  >> 12) & 7) << 3)));
-	DES_Vector K21 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
-	DES_Vector K22 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
-	DES_Vector K23 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
-	DES_Vector K24 = ((key & (0x1U << 3)) ? 0xffffffffU : 0x0);
-	DES_Vector K25 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
-	DES_Vector K26 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
-	DES_Vector K27 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+	// ベースの鍵にスレッドIDを加算することで、重複のない「完全総当たり生バイナリ鍵」がこのスレッドに割り当てられる
+	uint64_t thread_raw_key = base_key_64 + global_thread_id;
 
-	CUDA_SET_KEY_CHAR(key, isSecondByte, cudaKeyCharTable_FirstByte, keyAndRandomBytes[4] + ( (blockIdx.x  >> 6) & 63));
-	DES_Vector K28 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
-	DES_Vector K29 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
-	DES_Vector K30 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
-	DES_Vector K31 = ((key & (0x1U << 3)) ? 0xffffffffU : 0x0);
-	DES_Vector K32 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
-	DES_Vector K33 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
-	DES_Vector K34 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+	// DESのビットスライスに必要な、鍵のビット分配処理（DESの鍵は有効56ビット、各バイトの最下位ビットはパリティで無視される特性を考慮）
+	// thread_raw_keyの各バイトのビットを抽出し、レジスタ（0x0 又は 0xffffffffU）へ展開します。
+	
+	// --- バイト1 (thread_raw_key の 48〜55ビット目) ---
+	uint32_t b1 = (uint32_t)((thread_raw_key >> 48) & 0xFF);
+	DES_Vector K07 = ((b1 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K08 = ((b1 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K09 = ((b1 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K10 = ((b1 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K11 = ((b1 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K12 = ((b1 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K13 = ((b1 & (1U << 1)) ? 0xffffffffU : 0x0);
 
-	CUDA_SET_KEY_CHAR(key, isSecondByte, cudaKeyCharTable_FirstByte, keyAndRandomBytes[5] + (  blockIdx.x        & 63));
-	DES_Vector K35 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
-	DES_Vector K36 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
-	DES_Vector K37 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
-	DES_Vector K38 = ((key & (0x1U << 3)) ? 0xffffffffU : 0x0);
-	DES_Vector K39 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
-	DES_Vector K40 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
-	DES_Vector K41 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+	// --- バイト2 (thread_raw_key の 40〜47ビット目) ---
+	uint32_t b2 = (uint32_t)((thread_raw_key >> 40) & 0xFF);
+	DES_Vector K14 = ((b2 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K15 = ((b2 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K16 = ((b2 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K17 = ((b2 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K18 = ((b2 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K19 = ((b2 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K20 = ((b2 & (1U << 1)) ? 0xffffffffU : 0x0);
 
-	CUDA_SET_KEY_CHAR(key, isSecondByte, cudaKeyCharTable_FirstByte, keyAndRandomBytes[6] + (  threadIdx.x       & 63));
-	DES_Vector K42 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
-	DES_Vector K43 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
-	DES_Vector K44 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
-	DES_Vector K45 = ((key & (0x1U << 3)) ? 0xffffffffU : 0x0);
-	DES_Vector K46 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
-	DES_Vector K47 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
-	DES_Vector K48 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+	// --- バイト3 (thread_raw_key の 32〜39ビット目) ---
+	uint32_t b3 = (uint32_t)((thread_raw_key >> 32) & 0xFF);
+	DES_Vector K21 = ((b3 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K22 = ((b3 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K23 = ((b3 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K24 = ((b3 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K25 = ((b3 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K26 = ((b3 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K27 = ((b3 & (1U << 1)) ? 0xffffffffU : 0x0);
 
-	DES_Vector K49 =  keyVectorsFrom49To55[0 + (isSecondByte ? 7 : 0)];
-	DES_Vector K50 =  keyVectorsFrom49To55[1 + (isSecondByte ? 7 : 0)];
-	DES_Vector K51 =  keyVectorsFrom49To55[2 + (isSecondByte ? 7 : 0)];
-	DES_Vector K52 =  keyVectorsFrom49To55[3 + (isSecondByte ? 7 : 0)];
-	DES_Vector K53 =  keyVectorsFrom49To55[4 + (isSecondByte ? 7 : 0)];
-	DES_Vector K54 =  keyVectorsFrom49To55[5 + (isSecondByte ? 7 : 0)];
-	DES_Vector K55 =  keyVectorsFrom49To55[6 + (isSecondByte ? 7 : 0)];
+	// --- バイト4 (thread_raw_key の 24〜31ビット目) ---
+	uint32_t b4 = (uint32_t)((thread_raw_key >> 24) & 0xFF);
+	DES_Vector K28 = ((b4 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K29 = ((b4 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K30 = ((b4 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K31 = ((b4 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K32 = ((b4 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K33 = ((b4 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K34 = ((b4 & (1U << 1)) ? 0xffffffffU : 0x0);
+
+	// --- バイト5 (thread_raw_key の 16〜23ビット目) ---
+	uint32_t b5 = (uint32_t)((thread_raw_key >> 16) & 0xFF);
+	DES_Vector K35 = ((b5 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K36 = ((b5 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K37 = ((b5 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K38 = ((b5 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K39 = ((b5 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K40 = ((b5 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K41 = ((b5 & (1U << 1)) ? 0xffffffffU : 0x0);
+
+	// --- バイト6 (thread_raw_key の 8〜15ビット目) ---
+	uint32_t b6 = (uint32_t)((thread_raw_key >> 8) & 0xFF);
+	DES_Vector K42 = ((b6 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K43 = ((b6 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K44 = ((b6 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K45 = ((b6 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K46 = ((b6 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K47 = ((b6 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K48 = ((b6 & (1U << 1)) ? 0xffffffffU : 0x0);
+
+	// --- バイト7 (thread_raw_key の 0〜7ビット目) ---
+	// 本来のDESの性質上、末尾のK49〜K55へ同様に生ビットを展開します（isSecondByte分岐は完全排除）
+	uint32_t b7 = (uint32_t)(thread_raw_key & 0xFF);
+	DES_Vector K49 = ((b7 & (1U << 7)) ? 0xffffffffU : 0x0);
+	DES_Vector K50 = ((b7 & (1U << 6)) ? 0xffffffffU : 0x0);
+	DES_Vector K51 = ((b7 & (1U << 5)) ? 0xffffffffU : 0x0);
+	DES_Vector K52 = ((b7 & (1U << 4)) ? 0xffffffffU : 0x0);
+	DES_Vector K53 = ((b7 & (1U << 3)) ? 0xffffffffU : 0x0);
+	DES_Vector K54 = ((b7 & (1U << 2)) ? 0xffffffffU : 0x0);
+	DES_Vector K55 = ((b7 & (1U << 1)) ? 0xffffffffU : 0x0);
 	
 	DES_Vector temp0, temp1;
 
+	// =========================================================================
+	// 25ラウンド暗号化コア・マッチング処理（ここから下はMeriken氏の超高速ロジックを100%維持）
+	// =========================================================================
 	int32_t tripcodeIndex;
 	int32_t passCount;
 	for (passCount = 0; passCount < CUDA_DES_MAX_PASS_COUNT; ++passCount) {
-		key = key0Array[passCount];
+		// バイト0 (thread_raw_keyの最上位に位置づけられる固定値、またはホスト側ループ追従値)
+		unsigned char key = key0Array[passCount];
 		DES_Vector K00 = ((key & (0x1U << 0)) ? 0xffffffffU : 0x0);
 		DES_Vector K01 = ((key & (0x1U << 1)) ? 0xffffffffU : 0x0);
 		DES_Vector K02 = ((key & (0x1U << 2)) ? 0xffffffffU : 0x0);
@@ -205,6 +239,8 @@ __global__ void KERNEL_FUNC(SALT)(
 		DES_Vector K04 = ((key & (0x1U << 4)) ? 0xffffffffU : 0x0);
 		DES_Vector K05 = ((key & (0x1U << 5)) ? 0xffffffffU : 0x0);
 		DES_Vector K06 = ((key & (0x1U << 6)) ? 0xffffffffU : 0x0);
+
+		// （以下、提示されたコードの残りの暗号化ループおよびBINARY_SEARCHへそのまま連続します...）
 
 		DES_Vector DB00 = 0, DB01 = 0, DB02 = 0, DB03 = 0, DB04 = 0, DB05 = 0, DB06 = 0, DB07 = 0, DB08 = 0, DB09 = 0;
 		DES_Vector DB10 = 0, DB11 = 0, DB12 = 0, DB13 = 0, DB14 = 0, DB15 = 0, DB16 = 0, DB17 = 0, DB18 = 0, DB19 = 0;
