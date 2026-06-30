@@ -122,5 +122,4 @@ typedef uint32_t DES_Vector;
 			cudaKey7Array,\
 			cudaKeyVectorsFrom49To55,\
 			cudaKeyAndRandomBytes,\
-			searchMode);\
-
+			searchMode);
