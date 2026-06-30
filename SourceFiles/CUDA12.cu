@@ -489,8 +489,10 @@ void Thread_SearchForSHA1TripcodesOnCUDADevice(CUDADeviceSearchThreadInfo *info)
 	startingTime = TIME_SINCE_EPOCH_IN_MILLISECONDS;
 
 	while (!GetTerminationState()) {
-		// Choose a random key.
-		SetCharactersInTripcodeKeyForSHA1Tripcode(key);
+		// ★【修正】12バイト全体をランダムに生成
+		for (int32_t i = 0; i < 12; ++i)
+			key[i] = RandomByte();
+		
 		if (!IsValidKey(key))
 			continue;
 		for (int32_t i = 0; i < 4; ++i)
