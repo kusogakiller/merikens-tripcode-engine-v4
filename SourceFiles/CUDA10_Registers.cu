@@ -73,7 +73,7 @@
 		int32_t intSalt,\
 		unsigned char *cudaKey0Array,\
 		unsigned char *cudaKey7Array,\
-		DES_Vector *cudaKeyVectorsFrom49To55,\
+		DES_Vector *cudaKeyVectorsFrom49To55 = NULL;\
 		unsigned char *cudaKeyAndRandomBytes,\
 		int32_t searchMode)\
 
@@ -135,7 +135,6 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 	unsigned char  *cudaKey0Array = NULL;      // ビットスライスDESの「鍵の第0バイト」をGPUへ送るVRAM領域
 	unsigned char  *cudaKey7Array = NULL;      // ビットスライスDESの「鍵の第7バイト」をGPUへ送るVRAM領域
 	unsigned char  *cudaKeyAndRandomBytes = NULL; // 探索の基準となるベースキー（8バイト）をGPUへ送るVRAM領域
-	DES_Vector     *cudaKeyVectorsFrom49To55;  // DES内部で使われる鍵スケジュール用のビット展開済配列（VRAM）
 	unsigned char   key0Array[CUDA_DES_MAX_PASS_COUNT]; // 第0バイトをCPU側で準備するためのワーク配列
 	unsigned char   key7Array[CUDA_DES_BS_DEPTH * 2]; // 第7バイトをCPU側で準備するためのワーク配列
 	unsigned char   keyAndRandomBytes[MAX_LEN_TRIPCODE + 1]; // ベースキー（8バイト）を保持するCPU配列
@@ -158,7 +157,7 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 	double          deltaTime;                // 1ループの処理にかかった秒数（差分）
 
 	// 配列の初期化（バッファオーバーランを防ぐためのヌル終端処理）
-	keyAndRandomBytes[lenTripcode] = '\0';
+	keyAndRandomBytes[MAX_LEN_TRIPCODE] = '\0';
 	for (int i = 0; i < MAX_LEN_TRIPCODE + 1; ++i)
 	    prevKeyAndRandomBytes[i] = '\0';
 	
@@ -185,7 +184,8 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 	CUDA_ERROR(cudaMalloc((void **)&cudaKey7Array,            sizeof(unsigned char) * CUDA_DES_BS_DEPTH * 2)); 
 	CUDA_ERROR(cudaMalloc((void **)&cudaKeyVectorsFrom49To55, sizeof(DES_Vector) * 7 * 2)); 
 	CUDA_ERROR(cudaMalloc((void **)&cudaKeyAndRandomBytes,    sizeof(unsigned char) * 8)); 
-	
+	CUDA_ERROR(cudaMalloc((void **)&cudaKeyVectorsFrom49To55, sizeof(DES_Vector) * 7 * 2));
+
 	// スレッド競合を防ぐため一時的にスレッドロックを獲得
 	info->mutex.lock();
 	
@@ -268,7 +268,7 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 			cudaKey7Array,            // バイナリ第7バイト配列
 			cudaKeyVectorsFrom49To55, // ビットスライス用レジスタ配列
 			cudaKeyAndRandomBytes,    // 基準となる64ビットバイナリ生キー
-			searchMode);              // 検索モードフラグ
+			int32_t searchMode = 0;   // 検索モードフラグ
 
 		// カーネル起動時に重大なエラーが発生していないか直後にチェック
 		CUDA_ERROR(cudaGetLastError());
