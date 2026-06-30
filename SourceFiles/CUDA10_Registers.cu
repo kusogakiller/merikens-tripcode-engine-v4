@@ -223,10 +223,9 @@ void Thread_SearchForDESTripcodesOnCUDADevice_Registers(CUDADeviceSearchThreadIn
 
 		// ★独立Saltの強制適用（12ビットの整数ハッシュ、例として「r1」に対応する0x0123を固定注入）
 		for (int32_t intSalt = 0; intSalt < 4096; ++intSalt) {
-		}
 
 		// ★純粋な64ビット（8バイト）バイナリカウンターベースの並列インクリメント
-		static uint64_t global_binary_counter = 0x0000000000000000ULL; // 基準値から開始
+		static uint64_t global_binary_counter = GetRandomSeed(); // 基準値から開始
 		current_loop_base_counter = global_binary_counter; // 現在周回のベース値をロック
 		
 		// 64ビットの数値を、8バイトの生バイナリ配列（Big-Endian）にダイレクトに分解
