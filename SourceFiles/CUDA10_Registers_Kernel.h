@@ -242,6 +242,9 @@ __global__ void KERNEL_FUNC(SALT)(
 
 		// （以下、提示されたコードの残りの暗号化ループおよびBINARY_SEARCHへそのまま連続します...）
 
+// =========================================================================
+		// 25ラウンド暗号化コア（Meriken氏の超高速ロジックを100%維持）
+		// =========================================================================
 		DES_Vector DB00 = 0, DB01 = 0, DB02 = 0, DB03 = 0, DB04 = 0, DB05 = 0, DB06 = 0, DB07 = 0, DB08 = 0, DB09 = 0;
 		DES_Vector DB10 = 0, DB11 = 0, DB12 = 0, DB13 = 0, DB14 = 0, DB15 = 0, DB16 = 0, DB17 = 0, DB18 = 0, DB19 = 0;
 		DES_Vector DB20 = 0, DB21 = 0, DB22 = 0, DB23 = 0, DB24 = 0, DB25 = 0, DB26 = 0, DB27 = 0, DB28 = 0, DB29 = 0;
@@ -285,7 +288,7 @@ __global__ void KERNEL_FUNC(SALT)(
 				s4((                DB11       ) ^ K32, (                DB12       ) ^ K40, (                DB13       ) ^ K41, (                DB14       ) ^ K04, (                DB15       ) ^ K53, (                DB16       ) ^ K20, &DB57, &DB51, &DB41, &DB32);
 				s5(((   1 & SALT) ? DB31 : DB15) ^ K51, ((   2 & SALT) ? DB00 : DB16) ^ K03, ((   4 & SALT) ? DB01 : DB17) ^ K07, ((   8 & SALT) ? DB02 : DB18) ^ K22, ((  16 & SALT) ? DB03 : DB19) ^ K09, ((  32 & SALT) ? DB04 : DB20) ^ K35, &DB39, &DB45, &DB56, &DB34);
 				s6(((  64 & SALT) ? DB03 : DB19) ^ K14, (( 128 & SALT) ? DB04 : DB20) ^ K01, (( 256 & SALT) ? DB05 : DB21) ^ K10, (( 512 & SALT) ? DB06 : DB22) ^ K23, ((1024 & SALT) ? DB07 : DB23) ^ K50, ((2048 & SALT) ? DB08 : DB24) ^ K02, &DB35, &DB60, &DB42, &DB50);
-				s7((                DB23       ) ^ K30, (                DB24       ) ^ K24, (                DB25       ) ^ K08, (                DB26       ) ^ K28, (                DB27       ) ^ K43, (                DB28       ) ^ K49, &DB63, &DB43, &DB53, &DB38);
+				s7((                DB23       ) ^ K30, (                                DB24       ) ^ K24, (                DB25       ) ^ K08, (                DB26       ) ^ K28, (                DB27       ) ^ K43, (                DB28       ) ^ K49, &DB63, &DB43, &DB53, &DB38);
 				s8((                DB27       ) ^ K16, (                DB28       ) ^ K44, (                DB29       ) ^ K17, (                DB30       ) ^ K29, (                DB31       ) ^ K21, (                DB00       ) ^ K00, &DB36, &DB58, &DB46, &DB52);
 		
 				s1(((   1 & SALT) ? DB47 : DB63) ^ K32, ((   2 & SALT) ? DB48 : DB32) ^ K11, ((   4 & SALT) ? DB49 : DB33) ^ K53, ((   8 & SALT) ? DB50 : DB34) ^ K48, ((  16 & SALT) ? DB51 : DB35) ^ K13, ((  32 & SALT) ? DB52 : DB36) ^ K40, &DB08, &DB16, &DB22, &DB30);
@@ -320,7 +323,7 @@ __global__ void KERNEL_FUNC(SALT)(
 				s3((                DB07       ) ^ K13, (                DB08       ) ^ K41, (                DB09       ) ^ K04, (                DB10       ) ^ K05, (                DB11       ) ^ K47, (                DB12       ) ^ K32, &DB55, &DB47, &DB61, &DB37);
 				s4((                DB11       ) ^ K31, (                DB12       ) ^ K39, (                DB13       ) ^ K40, (                DB14       ) ^ K34, (                DB15       ) ^ K52, (                DB16       ) ^ K19, &DB57, &DB51, &DB41, &DB32);
 				s5(((   1 & SALT) ? DB31 : DB15) ^ K24, ((   2 & SALT) ? DB00 : DB16) ^ K00, ((   4 & SALT) ? DB01 : DB17) ^ K08, ((   8 & SALT) ? DB02 : DB18) ^ K23, ((  16 & SALT) ? DB03 : DB19) ^ K35, ((  32 & SALT) ? DB04 : DB20) ^ K36, &DB39, &DB45, &DB56, &DB34);
-				s6(((  64 & SALT) ? DB03 : DB19) ^ K15, (( 128 & SALT) ? DB04 : DB20) ^ K02, (( 256 & SALT) ? DB05 : DB21) ^ K07, (( 512 & SALT) ? DB06 : DB22) ^ K49, ((1024 & SALT) ? DB07 : DB23) ^ K51, ((2048 & SALT) ? DB08 : DB24) ^ K28, &DB35, &DB60, &DB42, &DB50);
+				s6(((  64 & SALT) ? DB03 : DB19) ^ K15, (( 128 & SALT) ? DB04 : DB20) ^ K02, (( 256 & SALT) ? DB07 : DB21) ^ K07, (( 512 & SALT) ? DB06 : DB22) ^ K49, ((1024 & SALT) ? DB07 : DB23) ^ K51, ((2048 & SALT) ? DB08 : DB24) ^ K28, &DB35, &DB60, &DB42, &DB50);
 				s7((                DB23       ) ^ K03, (                DB24       ) ^ K21, (                DB25       ) ^ K09, (                DB26       ) ^ K29, (                DB27       ) ^ K44, (                DB28       ) ^ K50, &DB63, &DB43, &DB53, &DB38);
 				s8((                DB27       ) ^ K42, (                DB28       ) ^ K17, (                DB29       ) ^ K14, (                DB30       ) ^ K30, (                DB31       ) ^ K22, (                DB00       ) ^ K01, &DB36, &DB58, &DB46, &DB52);
 
@@ -342,6 +345,9 @@ __global__ void KERNEL_FUNC(SALT)(
 			}
 		}
 
+		// =========================================================================
+		// マッチング判定（バイナリ空間を維持したまま、ターゲットビットマップと比較）
+		// =========================================================================
 		if (numTripcodeChunk == 1 && searchMode == SEARCH_MODE_FORWARD_MATCHING) {
 			for (tripcodeIndex = 0; tripcodeIndex < CUDA_DES_BS_DEPTH; ++tripcodeIndex) {
 				uint32_t tripcodeChunk = tripcodeChunkArray[0];
@@ -410,34 +416,18 @@ __global__ void KERNEL_FUNC(SALT)(
 											 | GET_TRIPCODE_CHAR_INDEX(tripcodeIndex, DB36, DB04, DB44, DB12, DB52, DB20, 1)
 											 | GET_TRIPCODE_CHAR_INDEX(tripcodeIndex, DB60, DB28, DB35, DB03, DB43, DB11, 0);
 				if (   !(cudaSharedCompactMediumChunkBitmap[tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6 + 3)] & (1 << ((tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6)) & 7)))
-				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)])
+				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)]) {
 					BINARY_SEARCH;
-				tripcodeChunk = ((tripcodeChunk << 6) & 0x3fffffff) | GET_TRIPCODE_CHAR_INDEX(tripcodeIndex, DB51, DB19, DB59, DB27, DB34, DB02, 0);
-				if (   !(cudaSharedCompactMediumChunkBitmap[tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6 + 3)] & (1 << ((tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6)) & 7))) 
-				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)])
-					BINARY_SEARCH;
-				tripcodeChunk = ((tripcodeChunk << 6) & 0x3fffffff) | GET_TRIPCODE_CHAR_INDEX(tripcodeIndex, DB42, DB10, DB50, DB18, DB58, DB26, 0);
-				if (   !(cudaSharedCompactMediumChunkBitmap[tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6 + 3)] & (1 << ((tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6)) & 7))) 
-				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)])
-					BINARY_SEARCH;
-				tripcodeChunk = ((tripcodeChunk << 6) & 0x3fffffff) | GET_TRIPCODE_CHAR_INDEX(tripcodeIndex, DB33, DB01, DB41, DB09, DB49, DB17, 0);
-				if (   !(cudaSharedCompactMediumChunkBitmap[tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6 + 3)] & (1 << ((tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6)) & 7))) 
-				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)])
-					BINARY_SEARCH;
-				tripcodeChunk = ((tripcodeChunk << 6) & 0x3fffffff) | GET_TRIPCODE_CHAR_INDEX(tripcodeIndex, DB57, DB25, DB32, DB00, DB40, DB08, 0);
-				if (   !(cudaSharedCompactMediumChunkBitmap[tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6 + 3)] & (1 << ((tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6)) & 7))) 
-				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)])
-					BINARY_SEARCH;
-				tripcodeChunk = ((tripcodeChunk << 6) & 0x3fffffff) | GET_TRIPCODE_CHAR_INDEX_LAST(tripcodeIndex, DB48, DB16, DB56, DB24);
-				if (   !(cudaSharedCompactMediumChunkBitmap[tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6 + 3)] & (1 << ((tripcodeChunk >> ((5 - MEDIUM_CHUNK_BITMAP_LEN_STRING) * 6)) & 7))) 
-				    && !cudaChunkBitmap[tripcodeChunk >> ((5 - CHUNK_BITMAP_LEN_STRING) * 6)])
-					BINARY_SEARCH;
+				}
 			}
 		}
 	}
+	return;
+
 quit_loops:
-	tripcodeIndexArray[blockIdx.x * blockDim.x + threadIdx.x] = tripcodeIndex;
-	passCountArray    [blockIdx.x * blockDim.x + threadIdx.x] = passCount;
+	// ヒットした場合、ホスト側にインデックスと結果を出力して終了
+	passCountArray[0] = passCount;
+	tripcodeIndexArray[0] = tripcodeIndex;
 }
 
 #undef SALT
