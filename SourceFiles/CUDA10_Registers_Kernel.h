@@ -32,6 +32,10 @@
 #define CHUNK_BITMAP_LEN_STRING             4
 #endif
 
+#ifndef COMPACT_MEDIUM_CHUNK_BITMAP_SIZE
+#define COMPACT_MEDIUM_CHUNK_BITMAP_SIZE 8192
+#endif
+
 // --- 徹底修正：PTXインラインアセンブリのレジスタ安全スワップ実装 ---
 // 外部変数 temp0 に依存せず、アセンブリ内部のローカル変数 (%2) で完結させることで未定義エラーを100%回避
 #define SWAP(a, b) asm("{\n\t.reg .b32 %%t;\n\tmov.u32 %%t, %0;\n\tmov.u32 %0, %1;\n\tmov.u32 %1, %%t;\n\t}":"+r"(a), "+r"(b));
@@ -123,7 +127,7 @@ __global__ void KERNEL_FUNC(SALT)(
 
 	// 徹底修正：32ビット整数あふれ（オーバーフロー）を防ぐため完全に uint64_t でキャスト計算
 	uint64_t global_thread_id = (uint64_t)blockIdx.x * (uint64_t)blockDim.x + (uint64_t)threadIdx.x;
-
+    
 	// 各スレッドに固有の重複しない完全連続総当たりバイナリベース鍵を確定
 	uint64_t thread_raw_key = base_key_64 + global_thread_id;
 
@@ -173,6 +177,7 @@ __global__ void KERNEL_FUNC(SALT)(
 	
 	DES_Vector temp0, temp1; // KEYSWAP内で使用される退避用テンポラリレジスタ
 	int32_t tripcodeIndex;   // 一致したビットスライスレーンインデックス (0〜31)
+	tripcodeIndex = 0xFF;
 	int32_t passCount;       // 暗号化対象セッションのループカウンタ
 
 	// 4. パスセッションループ（総当たり試行開始）
@@ -256,7 +261,7 @@ __global__ void KERNEL_FUNC(SALT)(
 				s8((                DB59       ) ^ K03, (                DB60       ) ^ K02, (                DB61       ) ^ K28, (                DB62       ) ^ K44, (                DB63       ) ^ K36, (                DB32       ) ^ K15, &DB04, &DB26, &DB14, &DB20);
 		
 				s1(((   1 & SALT) ? DB15 : DB31) ^ K45, ((   2 & SALT) ? DB16 : DB00) ^ K55, ((   4 & SALT) ? DB17 : DB01) ^ K11, ((   8 & SALT) ? DB18 : DB02) ^ K06, ((  16 & SALT) ? DB19 : DB03) ^ K26, ((  32 & SALT) ? DB20 : DB04) ^ K53, &DB40, &DB48, &DB54, &DB62);
-				s2(((  64 & SALT) ? DB19 : DB03) ^ K12, (( 128 & SALT) ? DB20 : DB04) ^ K33, (( 256 & SALT) ? DB38 : DB38) ^ K46, (( 512 & SALT) ? DB22 : DB06) ^ K27, ((1024 & SALT) ? DB23 : DB07) ^ K18, ((2048 & SALT) ? DB24 : DB08) ^ K18, &DB44, &DB59, &DB33, &DB49);
+				s2(((  64 & SALT) ? DB19 : DB03) ^ K12, (( 128 & SALT) ? DB20 : DB04) ^ K33, (( 256 & SALT) ? DB21 : DB05) ^ K46, (( 512 & SALT) ? DB22 : DB06) ^ K27, ((1024 & SALT) ? DB23 : DB07) ^ K18, ((2048 & SALT) ? DB24 : DB08) ^ K18, &DB44, &DB59, &DB33, &DB49);
 				s3((                DB07       ) ^ K13, (                DB08       ) ^ K41, (                DB09       ) ^ K04, (                DB10       ) ^ K05, (                DB11       ) ^ K47, (                DB12       ) ^ K32, &DB55, &DB47, &DB61, &DB37);
 				s4((                DB11       ) ^ K31, (                DB12       ) ^ K39, (                DB13       ) ^ K40, (                DB14       ) ^ K34, (                DB15       ) ^ K52, (                DB16       ) ^ K19, &DB57, &DB51, &DB41, &DB32);
 				s5(((   1 & SALT) ? DB31 : DB15) ^ K24, ((   2 & SALT) ? DB00 : DB16) ^ K00, ((   4 & SALT) ? DB01 : DB17) ^ K08, ((   8 & SALT) ? DB02 : DB18) ^ K23, ((  16 & SALT) ? DB03 : DB19) ^ K35, ((  32 & SALT) ? DB04 : DB20) ^ K36, &DB39, &DB45, &DB56, &DB34);
