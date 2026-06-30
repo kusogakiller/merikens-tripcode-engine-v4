@@ -121,7 +121,7 @@ typedef uint32_t DES_Vector;
 // 末尾のセミコロンをマクロ内部から排除し、do-while(0)で保護。
 // 呼び出し側コードの「LAUNCH_KERNEL(seed);」という記述と100%の構文整合性を確保。
 // -----------------------------------------------------------------------------
-#define LAUNCH_KERNEL(seed); \
+#define LAUNCH_KERNEL(seed) \
 	do { \
 		CUDA_DES_PerformSearch_##seed<<<dimGrid, dimBlock, 0, currentStream>>>( \
 				cudaPassCountArray, \
